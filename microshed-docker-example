@@ -1,0 +1,328 @@
+Microshed Testing is a great choice for running integration tests for MicroProfile applications. It automatically provisions a real environment with Docker containers and other dependencies for end-to-end testing, enabling you to run tests as though the application is running in production.
+
+Here’s an example of using Microshed Testing with a MicroProfile REST API that performs CRUD operations. The setup will involve Microshed Testing running your MicroProfile application in a Docker container while executing tests.
+
+Project Structure
+
+
+student-api-microshed/
+├── src
+│   ├── main
+│   │   └── java
+│   │       └── com
+│   │           └── example
+│   │               └── students
+│   │                   ├── Student.java
+│   │                   └── StudentResource.java
+│   ├── test
+│   │   └── java
+│   │       └── com
+│   │           └── example
+│   │               └── StudentCrudMicroshedTest.java
+├── Dockerfile
+├── pom.xml
+
+
+
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <groupId>com.example</groupId>
+    <artifactId>student-api-microshed</artifactId>
+    <version>1.0-SNAPSHOT</version>
+
+    <properties>
+        <maven.compiler.source>11</maven.compiler.source>
+        <maven.compiler.target>11</maven.compiler.target>
+    </properties>
+
+    <dependencies>
+        <!-- MicroProfile dependencies -->
+        <dependency>
+            <groupId>org.eclipse.microprofile</groupId>
+            <artifactId>microprofile</artifactId>
+            <version>3.3</version>
+        </dependency>
+
+        <!-- JUnit 5 -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-api</artifactId>
+            <version>5.7.0</version>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-engine</artifactId>
+            <version>5.7.0</version>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- Microshed Testing -->
+        <dependency>
+            <groupId>org.microshed</groupId>
+            <artifactId>microshed-testing-liberty</artifactId>
+            <version>0.9</version>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- REST Assured for API testing -->
+        <dependency>
+            <groupId>io.rest-assured</groupId>
+            <artifactId>rest-assured</artifactId>
+            <version>4.4.0</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>
+
+
+
+
+
+2. MicroProfile REST API CRUD Operations
+
+Student.java
+
+This is the model representing the student entity.
+
+
+
+
+
+package com.example.students;
+
+public class Student {
+    private String id;
+    private String name;
+    private String grade;
+    private int enrollmentYear;
+
+    public Student() { }
+
+    public Student(String id, String name, String grade, int enrollmentYear) {
+        this.id = id;
+        this.name = name;
+        this.grade = grade;
+        this.enrollmentYear = enrollmentYear;
+    }
+
+    // Getters and setters
+    public String getId() {
+        return id;
+    }
+
+    public void setId(String id) {
+        this.id = id;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public void setName(String name) {
+        this.name = name;
+    }
+
+    public String getGrade() {
+        return grade;
+    }
+
+    public void setGrade(String grade) {
+        this.grade = grade;
+    }
+
+    public int getEnrollmentYear() {
+        return enrollmentYear;
+    }
+
+    public void setEnrollmentYear(int enrollmentYear) {
+        this.enrollmentYear = enrollmentYear;
+    }
+}
+
+
+
+
+
+StudentResource.java
+
+This REST API performs the CRUD operations:
+
+
+
+
+package com.example.students;
+
+import javax.ws.rs.*;
+import javax.ws.rs.core.MediaType;
+import javax.ws.rs.core.Response;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
+
+@Path("/students")
+@Produces(MediaType.APPLICATION_JSON)
+@Consumes(MediaType.APPLICATION_JSON)
+public class StudentResource {
+
+    private static List<Student> students = new ArrayList<>();
+
+    static {
+        students.add(new Student("1", "John Smith", "A", 2022));
+        students.add(new Student("2", "Jane Doe", "B", 2021));
+        students.add(new Student("3", "Sam Black", "A", 2022));
+    }
+
+    @GET
+    public List<Student> getStudents() {
+        return students;
+    }
+
+    @GET
+    @Path("/{id}")
+    public Response getStudent(@PathParam("id") String id) {
+        Optional<Student> student = students.stream()
+                .filter(s -> s.getId().equals(id))
+                .findFirst();
+
+        return student.map(value -> Response.ok(value).build())
+                .orElse(Response.status(Response.Status.NOT_FOUND).build());
+    }
+
+    @POST
+    public Response createStudent(Student student) {
+        students.add(student);
+        return Response.status(Response.Status.CREATED).entity(student).build();
+    }
+
+    @PUT
+    @Path("/{id}")
+    public Response updateStudent(@PathParam("id") String id, Student student) {
+        for (Student s : students) {
+            if (s.getId().equals(id)) {
+                s.setName(student.getName());
+                s.setGrade(student.getGrade());
+                s.setEnrollmentYear(student.getEnrollmentYear());
+                return Response.ok(s).build();
+            }
+        }
+        return Response.status(Response.Status.NOT_FOUND).build();
+    }
+
+    @DELETE
+    @Path("/{id}")
+    public Response deleteStudent(@PathParam("id") String id) {
+        students.removeIf(s -> s.getId().equals(id));
+        return Response.noContent().build();
+    }
+}
+
+
+3. Dockerfile
+
+Create a Dockerfile to run your application in a Docker container.
+
+
+
+FROM openliberty/open-liberty:full
+
+COPY --chown=1001:0 target/student-api-microshed.war /config/dropins/
+COPY --chown=1001:0 src/main/liberty/config/server.xml /config/
+
+
+Make sure you have a server.xml with the necessary configurations.
+
+4. Microshed Testing (StudentCrudMicroshedTest.java)
+
+Here’s how you write tests using Microshed Testing with RestAssured.
+
+
+
+
+package com.example;
+
+import com.example.students.Student;
+import org.junit.jupiter.api.Test;
+import org.microshed.testing.jupiter.MicroShedTest;
+import org.microshed.testing.testcontainers.ApplicationContainer;
+
+import static io.restassured.RestAssured.given;
+import static org.hamcrest.Matchers.equalTo;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+@MicroShedTest
+public class StudentCrudMicroshedTest {
+
+    public static ApplicationContainer app = new ApplicationContainer()
+        .withAppContextRoot("/student-api-microshed")
+        .withReadinessPath("/students");
+
+    @Test
+    public void testGetAllStudents() {
+        given()
+            .when()
+            .get("/students")
+            .then()
+            .statusCode(200)
+            .body("[0].name", equalTo("John Smith"));
+    }
+
+    @Test
+    public void testCreateStudent() {
+        Student newStudent = new Student("4", "Alice Blue", "C", 2023);
+
+        given()
+            .contentType("application/json")
+            .body(newStudent)
+            .when()
+            .post("/students")
+            .then()
+            .statusCode(201);
+
+        // Verify the new student is created
+        given()
+            .when()
+            .get("/students/4")
+            .then()
+            .statusCode(200)
+            .body("name", equalTo("Alice Blue"));
+    }
+
+    @Test
+    public void testUpdateStudent() {
+        Student updatedStudent = new Student("2", "Jane Green", "A+", 2021);
+
+        given()
+            .contentType("application/json")
+            .body(updatedStudent)
+            .when()
+            .put("/students/2")
+            .then()
+            .statusCode(200)
+            .body("name", equalTo("Jane Green"));
+    }
+
+    @Test
+    public void testDeleteStudent() {
+        given()
+            .when()
+            .delete("/students/3")
+            .then()
+            .statusCode(204);
+
+        // Verify the student is deleted
+        given()
+            .when()
+            .get("/students/3")
+            .then()
+            .statusCode(404);
+    }
+}
+
+
+
+5. Run the Test
+
+	1.	Make sure Docker is running on your machine.
+	2.	Package your application with:
