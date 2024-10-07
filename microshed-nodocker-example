@@ -1,0 +1,302 @@
+You want to run Microshed Testing locally without using Docker images, and you’re interested in running it with Open Liberty directly. Here’s how you can set it up:
+
+Microshed Testing supports running tests with a locally started server, so you don’t need Docker containers. It will automatically start your Open Liberty server and run the tests against your local environment.
+
+Steps for Running Microshed Testing Locally on Open Liberty
+
+	1.	Update your pom.xml to include the necessary dependencies for Microshed Testing, JUnit 5, and MicroProfile.
+	2.	Configure Open Liberty with the required server setup to run locally.
+	3.	Run the Microshed tests without Docker. Microshed Testing will automatically detect and run against the local Open Liberty server.
+
+Project Structure
+
+student-api-microshed/
+├── src
+│   ├── main
+│   │   └── java
+│   │       └── com
+│   │           └── example
+│   │               └── students
+│   │                   ├── Student.java
+│   │                   └── StudentResource.java
+│   ├── test
+│   │   └── java
+│   │       └── com
+│   │           └── example
+│   │               └── StudentCrudMicroshedTest.java
+├── pom.xml
+
+
+
+1. pom.xml
+
+Include dependencies for Microshed Testing, Open Liberty, and JUnit 5.
+
+
+
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+
+    <modelVersion>4.0.0</modelVersion>
+    <groupId>com.example</groupId>
+    <artifactId>student-api-microshed</artifactId>
+    <version>1.0-SNAPSHOT</version>
+
+    <properties>
+        <maven.compiler.source>11</maven.compiler.source>
+        <maven.compiler.target>11</maven.compiler.target>
+    </properties>
+
+    <dependencies>
+        <!-- MicroProfile dependencies -->
+        <dependency>
+            <groupId>org.eclipse.microprofile</groupId>
+            <artifactId>microprofile</artifactId>
+            <version>3.3</version>
+        </dependency>
+
+        <!-- JUnit 5 -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-api</artifactId>
+            <version>5.7.0</version>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-engine</artifactId>
+            <version>5.7.0</version>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- Microshed Testing -->
+        <dependency>
+            <groupId>org.microshed</groupId>
+            <artifactId>microshed-testing-liberty</artifactId>
+            <version>0.9</version>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- REST Assured for API testing -->
+        <dependency>
+            <groupId>io.rest-assured</groupId>
+            <artifactId>rest-assured</artifactId>
+            <version>4.4.0</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-war-plugin</artifactId>
+                <version>3.2.3</version>
+                <configuration>
+                    <warSourceDirectory>src/main/webapp</warSourceDirectory>
+                    <failOnMissingWebXml>false</failOnMissingWebXml>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>
+
+
+
+2. MicroProfile REST API CRUD Operations
+
+The implementation of the REST API remains the same. Here’s a brief recap of StudentResource.java.
+
+StudentResource.java
+
+package com.example.students;
+
+import javax.ws.rs.*;
+import javax.ws.rs.core.MediaType;
+import javax.ws.rs.core.Response;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
+
+@Path("/students")
+@Produces(MediaType.APPLICATION_JSON)
+@Consumes(MediaType.APPLICATION_JSON)
+public class StudentResource {
+
+    private static List<Student> students = new ArrayList<>();
+
+    static {
+        students.add(new Student("1", "John Smith", "A", 2022));
+        students.add(new Student("2", "Jane Doe", "B", 2021));
+        students.add(new Student("3", "Sam Black", "A", 2022));
+    }
+
+    @GET
+    public List<Student> getStudents() {
+        return students;
+    }
+
+    @GET
+    @Path("/{id}")
+    public Response getStudent(@PathParam("id") String id) {
+        Optional<Student> student = students.stream()
+                .filter(s -> s.getId().equals(id))
+                .findFirst();
+
+        return student.map(value -> Response.ok(value).build())
+                .orElse(Response.status(Response.Status.NOT_FOUND).build());
+    }
+
+    @POST
+    public Response createStudent(Student student) {
+        students.add(student);
+        return Response.status(Response.Status.CREATED).entity(student).build();
+    }
+
+    @PUT
+    @Path("/{id}")
+    public Response updateStudent(@PathParam("id") String id, Student student) {
+        for (Student s : students) {
+            if (s.getId().equals(id)) {
+                s.setName(student.getName());
+                s.setGrade(student.getGrade());
+                s.setEnrollmentYear(student.getEnrollmentYear());
+                return Response.ok(s).build();
+            }
+        }
+        return Response.status(Response.Status.NOT_FOUND).build();
+    }
+
+    @DELETE
+    @Path("/{id}")
+    public Response deleteStudent(@PathParam("id") String id) {
+        students.removeIf(s -> s.getId().equals(id));
+        return Response.noContent().build();
+    }
+}
+
+
+3. Microshed Testing Setup
+
+Here’s how you write a Microshed Testing test for the CRUD operations:
+
+StudentCrudMicroshedTest.java
+
+
+package com.example;
+
+import com.example.students.Student;
+import org.junit.jupiter.api.Test;
+import org.microshed.testing.jupiter.MicroShedTest;
+import org.microshed.testing.SharedContainerConfig;
+import org.microshed.testing.liberty.junit.LibertyServer;
+
+import static io.restassured.RestAssured.given;
+import static org.hamcrest.Matchers.equalTo;
+
+@MicroShedTest
+@SharedContainerConfig(LocalLibertyServer.class)
+public class StudentCrudMicroshedTest {
+
+    @Test
+    public void testGetAllStudents() {
+        given()
+            .when()
+            .get("/students")
+            .then()
+            .statusCode(200)
+            .body("[0].name", equalTo("John Smith"));
+    }
+
+    @Test
+    public void testCreateStudent() {
+        Student newStudent = new Student("4", "Alice Blue", "C", 2023);
+
+        given()
+            .contentType("application/json")
+            .body(newStudent)
+            .when()
+            .post("/students")
+            .then()
+            .statusCode(201);
+
+        // Verify the new student is created
+        given()
+            .when()
+            .get("/students/4")
+            .then()
+            .statusCode(200)
+            .body("name", equalTo("Alice Blue"));
+    }
+
+    @Test
+    public void testUpdateStudent() {
+        Student updatedStudent = new Student("2", "Jane Green", "A+", 2021);
+
+        given()
+            .contentType("application/json")
+            .body(updatedStudent)
+            .when()
+            .put("/students/2")
+            .then()
+            .statusCode(200)
+            .body("name", equalTo("Jane Green"));
+    }
+
+    @Test
+    public void testDeleteStudent() {
+        given()
+            .when()
+            .delete("/students/3")
+            .then()
+            .statusCode(204);
+
+        // Verify the student is deleted
+        given()
+            .when()
+            .get("/students/3")
+            .then()
+            .statusCode(404);
+    }
+}
+
+
+4. Configuring Local Liberty Server
+
+To run Microshed Testing against a local Liberty server, you need to configure Open Liberty to start and stop locally during the test.
+
+Create a class that extends LibertyServer:
+
+LocalLibertyServer.java
+
+
+package com.example;
+
+import org.microshed.testing.liberty.junit.LibertyServer;
+
+public class LocalLibertyServer extends LibertyServer {
+
+    @Override
+    public String getBaseUri() {
+        return "http://localhost:9080/student-api-microshed";  // Adjust to match your Liberty configuration
+    }
+}
+
+
+5. Running the Tests Locally
+
+Once you have configured everything:
+
+	1.	Ensure Open Liberty is installed and configured correctly on your machine.
+	2.	Build your project using Maven:
+
+
+ mvn clean install
+
+ mvn test
+
+
+ Microshed Testing will automatically detect your local Liberty server, start the application, and run the tests against it.
+
+Conclusion
+
+This setup allows you to run Microshed Testing against a local Open Liberty server without Docker. The tests include CRUD operations for a MicroProfile service
+
